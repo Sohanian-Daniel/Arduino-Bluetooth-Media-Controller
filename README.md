@@ -6,4 +6,4 @@ https://ocw.cs.pub.ro/courses/pm/prj2023/amocanu/media-player-controller
 
 # IMPORTANT
 
-The Android app requires Special Notification Permissions that need to be granted manually and explicitly within your settings!
+The Android app requires **Special Notification Permissions** that need to be granted manually and explicitly within your settings!
