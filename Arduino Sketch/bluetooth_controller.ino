@@ -18,6 +18,9 @@ static unsigned long next_lit = 0;
 static unsigned long previous_lit = 0; 
 static unsigned int last_volume = 0;
 
+// used for AWAKE signal (UP)
+static unsigned int counter = 0;
+
 void debounceButton(unsigned long &last_interrupt_time, String message) {
   unsigned long interrupt_time = millis();
   // If interrupts come faster than DEBOUNCE_TIME, assume it's a bounce and ignore
@@ -73,6 +76,13 @@ ISR(TIMER1_COMPA_vect) {
   }
 
   last_volume = sensorValue;
+
+  // Send awake signal every 5 seconds
+  if (counter == 50) {
+    Serial.println("UP");
+    counter = 0;
+  }
+  counter++;
 }
 
 void setup() {
