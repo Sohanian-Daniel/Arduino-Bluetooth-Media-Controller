@@ -229,8 +229,6 @@ public class MainActivity extends AppCompatActivity {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 // Showing the toast message
                 Toast.makeText(MainActivity.this, "Bluetooth Granted", Toast.LENGTH_SHORT).show();
-            } else {
-                Toast.makeText(MainActivity.this, "Bluetooth Denied", Toast.LENGTH_SHORT).show();
             }
         }
     }
