@@ -11,6 +11,7 @@ import android.bluetooth.BluetoothSocket;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.media.AudioManager;
 import android.media.session.MediaController;
@@ -19,7 +20,6 @@ import android.media.session.PlaybackState;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
-import android.view.KeyEvent;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -40,10 +40,23 @@ public class MainActivity extends AppCompatActivity {
 
     private AudioManager audioManager;
     private MediaController mediaController;
-    private List<MediaController> mediaControllers;
     private MediaSessionManager mediaSessionManager;
 
+    private BluetoothReceiver bluetoothReceiver;
+
+    private boolean isInForeground;
+
     TextView centralText;
+
+    protected void onResume() {
+        super.onResume();
+        isInForeground = true;
+    }
+
+    protected void onPause() {
+        super.onPause();
+        isInForeground = false;
+    }
 
     @RequiresApi(api = Build.VERSION_CODES.S)
     @Override
@@ -65,56 +78,32 @@ public class MainActivity extends AppCompatActivity {
         mediaSessionManager = (MediaSessionManager) this.getSystemService(Context.MEDIA_SESSION_SERVICE);
         updateMediaSessions();
 
+        bluetoothReceiver = new BluetoothReceiver();
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED);
+        registerReceiver(bluetoothReceiver, filter);
+
         bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
         if (bluetoothAdapter == null) {
-            Toast.makeText(this, "Bluetooth not supported on this device", Toast.LENGTH_SHORT).show();
+            makeToast("Bluetooth not supported on this device");
             finish();
             return;
         }
 
         // Check if Bluetooth is enabled
         if (!bluetoothAdapter.isEnabled()) {
-            Toast.makeText(this, "Please enable Bluetooth and try again", Toast.LENGTH_SHORT).show();
+            makeToast("Please enable Bluetooth and try again");
             finish();
             return;
         }
 
-        // Get a list of paired devices and ask for permissions to do so.
-        if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(MainActivity.this, new String[] { android.Manifest.permission.BLUETOOTH_CONNECT }, 1);
-        }
-        Set<BluetoothDevice> pairedDevices = bluetoothAdapter.getBondedDevices();
+        centralText.setText("Found HC-06!");
 
-        // Check if the target device is paired
-        for (BluetoothDevice device : pairedDevices) {
-            if (device.getName().contains(DEVICE_NAME)) {
-                targetDevice = device;
-                break;
-            }
-        }
-
-        if (targetDevice == null) {
-            Toast.makeText(this, "Target device not found", Toast.LENGTH_SHORT).show();
-            finish();
-            return;
-        }
-
-        // Connect to the target device
-        try {
-            bluetoothSocket = targetDevice.createRfcommSocketToServiceRecord(MY_UUID);
-            bluetoothSocket.connect();
-            Toast.makeText(this, "Connected to " + DEVICE_NAME, Toast.LENGTH_SHORT).show();
-            centralText.setText("Connected to " + DEVICE_NAME);
-            loop();
-
-        } catch (IOException e) {
-            Log.e(TAG, "Error connecting to Bluetooth device: " + e.getMessage());
-            Toast.makeText(this, "Failed to connect to " + DEVICE_NAME, Toast.LENGTH_SHORT).show();
-        }
+        connectToBluetoothDevice();
     }
 
     private void updateMediaSessions() {
-        mediaControllers = mediaSessionManager.getActiveSessions(new ComponentName(this, NotificationListener.class));
+        List<MediaController> mediaControllers = mediaSessionManager.getActiveSessions(new ComponentName(this, NotificationListener.class));
         Log.i(TAG, "found " + mediaControllers.size() + " controllers");
 
         for (MediaController mediaController : mediaControllers) {
@@ -123,7 +112,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void loop() {
+    private void startBluetoothCommandDecoder() {
         Thread thread = new Thread(() -> {
             InputStream inputStream;
             byte[] buffer = new byte[1024];
@@ -140,14 +129,19 @@ public class MainActivity extends AppCompatActivity {
                     // Update media sessions every time we receive a command.
                     updateMediaSessions();
                     // Check the code sent by the Arduino and do the appropiate action
-                    if (receivedMessage.equals("P!")) {
-                        pauseSong();
-                    } else if (receivedMessage.equals("F!")) {
-                        seekForward();
-                    } else if (receivedMessage.equals("N!")) {
-                        nextSong();
-                    } else if (receivedMessage.equals("B!")) {
-                        previousSong();
+                    switch (receivedMessage) {
+                        case "P!":
+                            pauseSong();
+                            break;
+                        case "F!":
+                            seekForward();
+                            break;
+                        case "N!":
+                            nextSong();
+                            break;
+                        case "B!":
+                            previousSong();
+                            break;
                     }
 
                     if (receivedMessage.startsWith("!")) {
@@ -203,18 +197,74 @@ public class MainActivity extends AppCompatActivity {
         audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, volume, 0);
     }
 
+    public void makeToast(String message) {
+        if (isInForeground) {
+            Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    @RequiresApi(api = Build.VERSION_CODES.S)
+    public void connectToBluetoothDevice() {
+        // Get a list of paired devices and ask for permissions to do so.
+        if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(MainActivity.this, new String[] { android.Manifest.permission.BLUETOOTH_CONNECT }, 1);
+        }
+        Set<BluetoothDevice> pairedDevices = bluetoothAdapter.getBondedDevices();
+
+        // Check if the target device is paired
+        for (BluetoothDevice device : pairedDevices) {
+            if (device.getName().contains(DEVICE_NAME)) {
+                targetDevice = device;
+                break;
+            }
+        }
+
+        if (targetDevice == null) {
+            makeToast("Target device not found, please pair the device.");
+            finish();
+            return;
+        }
+
+        boolean isConnected = false;
+        while (!isConnected) {
+            try {
+                bluetoothSocket = targetDevice.createRfcommSocketToServiceRecord(MY_UUID);
+                bluetoothSocket.connect();
+                makeToast("Connected to " + DEVICE_NAME);
+                isConnected = true; // Connection successful, exit the loop
+
+            } catch (IOException e) {
+                Log.e(TAG, "Error connecting to Bluetooth device: " + e.getMessage());
+                makeToast("Failed to connect to " + DEVICE_NAME + ", retrying.");
+
+                // Retry connection after a delay
+                try {
+                    Thread.sleep(1000); // Delay for 1 second before retrying
+                } catch (InterruptedException ex) {
+                    ex.printStackTrace();
+                }
+            }
+        }
+
+        startBluetoothCommandDecoder();
+
+    }
+
     @Override
     protected void onDestroy() {
         super.onDestroy();
 
-        // Close the Bluetooth socket
-        if (bluetoothSocket != null) {
-            try {
-                bluetoothSocket.close();
-                Toast.makeText(this, "Disconnected from " + DEVICE_NAME, Toast.LENGTH_SHORT).show();
-            } catch (IOException e) {
-                Log.e(TAG, "Error closing Bluetooth socket: " + e.getMessage());
+        if (isFinishing()) {
+            // Close the Bluetooth socket
+            if (bluetoothSocket != null) {
+                try {
+                    bluetoothSocket.close();
+                    makeToast("Disconnected from " + DEVICE_NAME);
+                } catch (IOException e) {
+                    Log.e(TAG, "Error closing Bluetooth socket: " + e.getMessage());
+                }
             }
+            unregisterReceiver(bluetoothReceiver);
         }
     }
 
@@ -228,7 +278,7 @@ public class MainActivity extends AppCompatActivity {
             // Checking whether user granted the permission or not.
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 // Showing the toast message
-                Toast.makeText(MainActivity.this, "Bluetooth Granted", Toast.LENGTH_SHORT).show();
+                makeToast("Bluetooth Granted");
             }
         }
     }
