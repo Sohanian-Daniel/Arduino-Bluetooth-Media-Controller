@@ -8,7 +8,7 @@
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
     <uses-permission android:name="android.permission.MEDIA_CONTENT_CONTROL"
         tools:ignore="ProtectedPermissions" />
-
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
 
 
     <application
@@ -50,6 +50,14 @@
                 android:value="ongoing|silent">
             </meta-data>
         </service>
+
+        <service
+            android:name=".BluetoothService"
+            android:enabled="true"
+            android:exported="false"
+            android:permission="android.permission.BLUETOOTH_CONNECT"
+            android:stopWithTask="true"
+            />
 
 
         <receiver android:name=".BluetoothReceiver" android:enabled="true" android:exported="true">

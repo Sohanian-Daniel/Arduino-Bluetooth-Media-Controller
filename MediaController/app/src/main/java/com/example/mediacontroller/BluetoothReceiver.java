@@ -7,6 +7,12 @@ import android.content.Intent;
 import android.os.Build;
 
 public class BluetoothReceiver extends BroadcastReceiver {
+    public BluetoothReceiver(BluetoothService service) {
+        this.service = service;
+    }
+
+    BluetoothService service;
+
     @Override
     public void onReceive(Context context, Intent intent) {
         String action = intent.getAction();
@@ -15,9 +21,7 @@ public class BluetoothReceiver extends BroadcastReceiver {
             // Bluetooth device disconnected
             BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
             // Handle the disconnection event by trying to reconnect
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                ((MainActivity) context).connectToBluetoothDevice();
-            }
+            service.connectToBluetoothDevice();
         }
     }
 }
