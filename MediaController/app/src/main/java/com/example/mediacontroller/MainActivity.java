@@ -7,10 +7,14 @@ import androidx.core.app.ActivityCompat;
 
 import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothAdapter;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.util.Log;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -49,6 +53,17 @@ public class MainActivity extends AppCompatActivity {
 
         centralText.setText("Found HC-06!");
 
+        // Create a receiver for closing the app through the notification.
+        BroadcastReceiver mReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                Log.i("CLOSING", "Closing App");
+                finish();
+            }
+        };
+        IntentFilter filter = new IntentFilter("android.intent.CLOSE_ACTIVITY");
+        registerReceiver(mReceiver, filter);
+
         serviceIntent = new Intent(this, BluetoothService.class);
         startService(serviceIntent);
     }
@@ -64,6 +79,7 @@ public class MainActivity extends AppCompatActivity {
         super.onDestroy();
 
         if (isFinishing()) {
+            Log.i("Closing everything", "Closing app");
             stopService(serviceIntent);
         }
     }

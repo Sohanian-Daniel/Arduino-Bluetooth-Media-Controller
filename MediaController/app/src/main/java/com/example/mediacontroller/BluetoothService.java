@@ -1,5 +1,6 @@
 package com.example.mediacontroller;
 
+import android.annotation.SuppressLint;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -11,7 +12,6 @@ import android.bluetooth.BluetoothSocket;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
 import android.media.AudioManager;
 import android.media.session.MediaController;
 import android.media.session.MediaSessionManager;
@@ -44,6 +44,7 @@ public class BluetoothService extends Service {
     private AudioManager audioManager;
     private MediaController mediaController;
     private MediaSessionManager mediaSessionManager;
+    private boolean finishing = false;
 
     @Override
     public void onCreate() {
@@ -65,12 +66,14 @@ public class BluetoothService extends Service {
         mediaSessionManager = (MediaSessionManager) this.getSystemService(Context.MEDIA_SESSION_SERVICE);
         updateMediaSessions();
 
-        BluetoothReceiver bluetoothReceiver = new BluetoothReceiver(this);
-        IntentFilter filter = new IntentFilter();
-        filter.addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED);
-        registerReceiver(bluetoothReceiver, filter);
+        Thread thread = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                connectToBluetoothDevice();
+            }
+        });
+        thread.start();
 
-        connectToBluetoothDevice();
         return START_STICKY;
     }
 
@@ -84,9 +87,10 @@ public class BluetoothService extends Service {
             } catch (IOException e) {
                 Log.e(TAG, "Error closing Bluetooth socket: " + e.getMessage());
             }
-            stopForeground(STOP_FOREGROUND_REMOVE);
-            stopSelf();
         }
+        finishing = true;
+        stopForeground(STOP_FOREGROUND_REMOVE);
+        stopSelf();
     }
 
     @Nullable
@@ -126,13 +130,10 @@ public class BluetoothService extends Service {
             } catch (IOException e) {
                 Log.e(TAG, "Error connecting to Bluetooth device: " + e.getMessage());
                 Log.i(TAG, "Failed to connect to " + DEVICE_NAME + ", retrying.");
-
-                // Retry connection after a delay
-                try {
-                    Thread.sleep(1000); // Delay for 1 second before retrying
-                } catch (InterruptedException ex) {
-                    ex.printStackTrace();
-                }
+            }
+            if (finishing) {
+                stopSelf();
+                return;
             }
         }
         startBluetoothCommandDecoder();
@@ -180,6 +181,10 @@ public class BluetoothService extends Service {
                     float volume = Float.parseFloat(receivedMessage.substring(1, 3));
                     setVolume(volume / 100);
                 }
+            }
+            // Reconnect when fail
+            if (!bluetoothSocket.isConnected()) {
+                connectToBluetoothDevice();
             }
         } catch (IOException e) {
             Log.e(TAG, "Error getting Bluetooth input stream: " + e.getMessage());
@@ -236,6 +241,7 @@ public class BluetoothService extends Service {
         }
     }
 
+    @SuppressLint("LaunchActivityFromNotification")
     private Notification createNotification() {
         // Create a notification channel if targeting API level 26+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -244,17 +250,16 @@ public class BluetoothService extends Service {
             notificationManager.createNotificationChannel(channel);
         }
 
+        Intent actionExit = new Intent("android.intent.CLOSE_ACTIVITY");
+
+        PendingIntent pActionExit = PendingIntent.getBroadcast(this, 0, actionExit, PendingIntent.FLAG_CANCEL_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         // Create the notification
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle("Bluetooth Media Controller")
-                .setContentText("Running in the background.")
+                .setContentText("Click to close.")
+                .setContentIntent(pActionExit)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT);
-
-        // Set the notification click action to open the MainActivity
-        Intent notificationIntent = new Intent(this, MainActivity.class);
-        PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, PendingIntent.FLAG_IMMUTABLE);
-        builder.setContentIntent(pendingIntent);
 
         return builder.build();
     }
